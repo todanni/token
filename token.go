@@ -1,50 +1,74 @@
 package token
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"errors"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/thanhpk/randstr"
+
+	"github.com/lestrrat-go/jwx/jwa"
+	"github.com/lestrrat-go/jwx/jwk"
+	"github.com/lestrrat-go/jwx/jwt"
+	"github.com/todanni/authentication/pkg/account"
 )
 
 const (
-	Issuer = "todanni"
-	KeyURL = "http://todanni/jwt/public-key"
+	Issuer = "todanni-account-service"
 )
 
-type ToDanniClaims struct {
-	UserID     int    `json:"user_id"`
-	Email      string `json:"email"`
-	ProfilePic string `json:"profile_pic"`
+func Generate(key jwk.Key, acc account.AuthDetails) ([]byte, error) {
+	token := jwt.New()
+	token.Set(jwt.ExpirationKey, time.Now().Add(time.Hour*24).Unix())
+	token.Set(jwt.IssuerKey, Issuer)
+	token.Set("account_id", acc.AccountID)
+	token.Set("email", acc.Email)
+	token.Set("verified", acc.Verified)
 
-	jwt.StandardClaims
+	signed, err := jwt.Sign(token, jwa.RS256, key)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return signed, err
 }
 
-func Generate(userID int, email, profilePic, signingKey string) (string, error) {
-	claims := ToDanniClaims{
-		UserID:     userID,
-		Email:      email,
-		ProfilePic: profilePic,
-		StandardClaims: jwt.StandardClaims{
-			Issuer:    "todanni-account-service",
-			ExpiresAt: time.Now().Add(time.Hour * 1).Unix(),
-		},
-	}
+func Validate(token jwt.Token, set jwk.Set) (bool, error) {
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	ss, err := token.SignedString([]byte(signingKey))
-	if err != nil {
-		return "", err
-	}
-
-	return ss, nil
+	return false, errors.New("")
 }
 
-func Validate(tokenString, signingKey string) (bool, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &ToDanniClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(signingKey), nil
-	})
+func GeneratePrivateJWK(key rsa.PrivateKey) error {
+	jwkKey, err := jwk.New(key)
+	jwkKey.Set(jwk.KeyIDKey, randstr.Hex(10))
+	return err
+}
+
+func GeneratePublicJWK(key rsa.PrivateKey) error {
+	pubKey, err := jwk.New(key.PublicKey)
 	if err != nil {
-		return false, err
+		return err
 	}
-	return token.Valid, err
+	pubKey.Set(jwk.AlgorithmKey, jwa.RS256)
+	pubKey.Set(jwk.KeyIDKey, "mykey")
+	return err
+}
+
+func GenerateJWK() (privateJWK, publicJWK jwk.Key, err error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	privateJWK, err = jwk.New(privateKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	publicJWK, err = jwk.New(privateKey.PublicKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return privateJWK, publicJWK, nil
 }
