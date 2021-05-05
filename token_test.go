@@ -1,10 +1,12 @@
 package token
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -89,4 +91,23 @@ func Test_JWKVerification(t *testing.T) {
 	parsed, err := jwt.Parse(signed, jwt.WithKeySet(keyset), jwt.WithValidate(true))
 	assert.NoError(t, err)
 	assert.Equal(t, parsed.Issuer(), Issuer)
+}
+
+func Test_GenerateAndValidate(t *testing.T) {
+	// Setup
+	client := http.Client{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Generate token
+	tokenBytes, err := Generate(1123, client)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, tokenBytes)
+
+	fmt.Println(string(tokenBytes))
+
+	// Validate token
+	uid, err := Validate(tokenBytes, ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1123, uid)
 }
