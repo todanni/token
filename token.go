@@ -1,74 +1,63 @@
 package token
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"time"
 
-	"github.com/thanhpk/randstr"
-
-	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
-	"github.com/todanni/authentication/pkg/account"
 )
 
 const (
 	Issuer = "todanni-account-service"
+
+	// TODO: figure out how to store these for local testing
+	JWKURL   = "http://token-issuer/api/token/public-key"
+	TokenURL = "http://token-issuer/api/token?uid=%d"
 )
 
-func Generate(key jwk.Key, acc account.AuthDetails) ([]byte, error) {
-	token := jwt.New()
-	token.Set(jwt.ExpirationKey, time.Now().Add(time.Hour*24).Unix())
-	token.Set(jwt.IssuerKey, Issuer)
-	token.Set("account_id", acc.AccountID)
-	token.Set("email", acc.Email)
-	token.Set("verified", acc.Verified)
+func Generate(uid int, client http.Client) ([]byte, error) {
+	url := fmt.Sprintf(TokenURL, uid)
 
-	signed, err := jwt.Sign(token, jwa.RS256, key)
-	if err != nil {
-		return []byte{}, err
+	resp, err := client.Get(url)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return nil, errors.New("token issuer returned unexpected response")
 	}
+	tokenBytes, err := io.ReadAll(resp.Body)
 
-	return signed, err
+	return tokenBytes, err
 }
 
-func Validate(token jwt.Token, set jwk.Set) (bool, error) {
+func Validate(tokenBytes []byte, ctx context.Context) (uid int, err error) {
+	autoRefresh := jwk.NewAutoRefresh(ctx)
+	autoRefresh.Configure(JWKURL, jwk.WithMinRefreshInterval(time.Second*30))
 
-	return false, errors.New("")
-}
-
-func GeneratePrivateJWK(key rsa.PrivateKey) error {
-	jwkKey, err := jwk.New(key)
-	jwkKey.Set(jwk.KeyIDKey, randstr.Hex(10))
-	return err
-}
-
-func GeneratePublicJWK(key rsa.PrivateKey) error {
-	pubKey, err := jwk.New(key.PublicKey)
+	keySet, err := autoRefresh.Fetch(ctx, JWKURL)
 	if err != nil {
-		return err
-	}
-	pubKey.Set(jwk.AlgorithmKey, jwa.RS256)
-	pubKey.Set(jwk.KeyIDKey, "mykey")
-	return err
-}
-
-func GenerateJWK() (privateJWK, publicJWK jwk.Key, err error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, nil, err
+		return 0, err
 	}
 
-	privateJWK, err = jwk.New(privateKey)
+	buf, err := json.Marshal(keySet)
+	log.Printf("%s", buf)
+
+	parsed, err := jwt.Parse(tokenBytes, jwt.WithKeySet(keySet), jwt.WithValidate(true))
 	if err != nil {
-		return nil, nil, err
+		return 0, err
 	}
 
-	publicJWK, err = jwk.New(privateKey.PublicKey)
-	if err != nil {
-		return nil, nil, err
+	userID, ok := parsed.Get("uid")
+	// Some dank hacks to make this not a float
+	// https://tanaikech.github.io/2017/06/02/changing-from-float64-to-int-for-values-did-unmarshal-using-mapstringinterface/
+	uid = int(userID.(float64))
+	if ok != true {
+		return 0, err
 	}
-	return privateJWK, publicJWK, nil
+
+	return uid, nil
 }
