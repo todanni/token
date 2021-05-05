@@ -3,7 +3,6 @@ package token
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -27,7 +26,7 @@ func Generate(uid int, client http.Client) ([]byte, error) {
 
 	resp, err := client.Get(url)
 	if err != nil || resp.StatusCode != http.StatusOK {
-		return nil, errors.New("token issuer returned unexpected response")
+		return nil, err
 	}
 	tokenBytes, err := io.ReadAll(resp.Body)
 
