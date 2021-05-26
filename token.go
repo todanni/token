@@ -16,15 +16,13 @@ import (
 const (
 	Issuer = "todanni-account-service"
 
-	// TODO: figure out how to store these for local testing
+	//TODO: figure out how to store these for local testing
 	JWKURL   = "http://token-issuer/api/token/public-key"
 	TokenURL = "http://token-issuer/api/token?uid=%d"
 )
 
-func Generate(uid int, client http.Client) ([]byte, error) {
-	url := fmt.Sprintf(TokenURL, uid)
-
-	resp, err := client.Get(url)
+func Generate(uid int, client http.Client, url string) ([]byte, error) {
+	resp, err := client.Get(fmt.Sprintf("%/?uid=%d", url, uid))
 	if err != nil || resp.StatusCode != http.StatusOK {
 		return nil, err
 	}
